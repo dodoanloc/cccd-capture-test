@@ -1,38 +1,16 @@
 # CCCD Capture App
 
-Webapp chụp CCCD/Căn cước bằng camera thiết bị, quét QR, trích xuất dữ liệu cơ bản và lưu database cục bộ ngay trên trình duyệt.
+Bản test mobile-first để chụp CCCD/Căn cước, nhận dạng thông tin từ **ảnh mặt trước + mặt sau**, còn **QR chủ yếu để bổ sung số CMND cũ (nếu có)**.
 
-## Tính năng
-- Chụp tuần tự: mặt trước → mặt sau → QR
-- Quét QR CCCD bằng `jsQR`
-- Tự điền các trường phổ biến từ dữ liệu QR
-- Chỉnh tay dữ liệu trước khi lưu
-- Lưu database bằng `localStorage`
-- Tra cứu, copy, in đầy đủ ảnh mặt trước, mặt sau, QR và dữ liệu văn bản
-- Xuất/Nhập JSON để backup hoặc chuyển máy
+## Cải tiến đã áp dụng
+- Giao diện ưu tiên mobile, đưa camera lên đầu trang
+- Bỏ phần giới thiệu/hướng dẫn dài để thao tác nhanh hơn
+- Tự động chụp khi khung hình đủ sáng và đủ nét tương đối
+- OCR mặt trước/mặt sau bằng `Tesseract.js`
+- QR dùng để bổ sung dữ liệu phụ, không còn là nguồn chính cho toàn bộ hồ sơ
+- Lưu database cục bộ, tra cứu, copy, in hình ảnh thẻ đầy đủ
 
-## Cấu trúc
-- `index.html` — giao diện chính
-- `styles.css` — toàn bộ UI
-- `app.js` — logic camera, QR, database, in
-
-## Chạy thử
-Chỉ cần mở `index.html` trong trình duyệt hiện đại.
-
-Để dùng camera ổn định hơn, nên chạy qua web server local hoặc deploy HTTPS:
-- GitHub Pages
-- Vercel
-- Netlify
-- hoặc `python3 -m http.server`
-
-## Lưu ý kỹ thuật
-- Bản hiện tại ưu tiên chạy hoàn toàn trên frontend, chưa có OCR backend.
-- Việc trích xuất tự động hiện dựa chủ yếu vào **QR CCCD**.
-- Ảnh mặt trước/mặt sau được lưu dưới dạng base64 trong localStorage, phù hợp demo/prototype.
-- Nếu dùng lâu dài với lượng dữ liệu lớn, nên nâng cấp sang IndexedDB hoặc backend thật.
-
-## Hướng nâng cấp tiếp theo
-- Dùng OCR cho mặt trước/mặt sau khi QR không đọc được
-- Lưu ảnh vào IndexedDB thay vì localStorage
-- Đồng bộ lên Airtable / Supabase / PostgreSQL
-- Sinh phiếu in đẹp hơn dạng A4 chuẩn nghiệp vụ
+## Ghi chú kỹ thuật
+- OCR trên trình duyệt vẫn phụ thuộc chất lượng ảnh, độ rung, ánh sáng và hiệu năng máy
+- Với điện thoại yếu, lần OCR đầu có thể chậm do tải model
+- Nếu cần độ chính xác cao hơn cho production, nên chuyển OCR sang backend hoặc dùng mô hình/engine chuyên dụng hơn
