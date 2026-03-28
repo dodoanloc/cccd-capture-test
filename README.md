@@ -1,33 +1,25 @@
-# CCCD Capture App v2
+# CCCD Capture App V3
 
-Bản v2 tập trung vào khả năng dùng thật tốt hơn trên mobile:
-- **Mobile-first UI**
-- **Lưu dữ liệu bằng IndexedDB** thay vì localStorage
-- **Tiền xử lý ảnh** trước OCR để tăng độ tương phản
-- **OCR mặt trước + mặt sau** là nguồn trích xuất chính
-- **QR chỉ để bổ sung số CMND cũ (nếu có)**
-- Tra cứu, copy, in, xuất/nhập JSON
+V3 tập trung sửa 2 điểm lớn:
+1. **Tắt hoàn toàn auto capture** để người dùng chủ động chụp chính xác hơn.
+2. **Cải thiện OCR** bằng pipeline nhiều lớp thay vì chỉ OCR 1 ảnh duy nhất.
 
-## Cải tiến chính của v2
-1. **IndexedDB**
-   - lưu hồ sơ tốt hơn localStorage
-   - phù hợp khi ảnh và dữ liệu tăng lên
+## Điểm mới của V3
+- Auto capture đã tắt hoàn toàn
+- OCR thủ công lại theo bước hiện tại bằng nút **OCR lại**
+- Tiền xử lý nhiều biến thể:
+  - crop vùng trọng tâm
+  - tăng tương phản
+  - grayscale / nhị phân hóa
+- Parser mạnh hơn theo hướng voting từ nhiều kết quả OCR
+- Mặt trước ưu tiên: họ tên, CCCD, ngày sinh, giới tính, nơi cấp
+- Mặt sau ưu tiên: ngày cấp, địa chỉ thường trú, địa chỉ hiện tại
+- QR chỉ bổ sung số CMND cũ nếu có
+- Có nút copy địa chỉ thường trú sang địa chỉ hiện tại
+- Lưu bằng IndexedDB, hỗ trợ export/import JSON
 
-2. **Image preprocessing**
-   - chuyển grayscale / tăng tương phản trước OCR
-   - với QR dùng ngưỡng nhị phân để dễ đọc hơn
-
-3. **OCR-first parser**
-   - mặt trước: họ tên, số CCCD, ngày sinh, giới tính, nơi cấp
-   - mặt sau: ngày cấp, thường trú, hiện tại
-   - QR: ưu tiên số CMND cũ
-
-4. **Auto capture cải tiến**
-   - kiểm tra sáng + sắc nét tương đối
-   - tự chụp khi khung hình ổn định hơn
-
-## Lưu ý
-Đây vẫn là frontend-only prototype nâng cao. Nếu cần production-grade OCR rất ổn định, bước tiếp theo nên là:
-- crop/deskew thẻ bằng computer vision
+## Ghi chú
+Dù V3 tốt hơn V2, đây vẫn là frontend OCR. Nếu cần độ ổn định rất cao cho production thật, nên làm V4 với:
+- crop/deskew bằng computer vision tốt hơn
 - OCR backend chuyên dụng
-- đồng bộ database server-side
+- chuẩn hóa parser CCCD Việt Nam bằng rule engine riêng

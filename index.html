@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CCCD Scan Mobile</title>
+  <title>CCCD Scan V3</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -13,8 +13,8 @@
   <div class="mobile-app">
     <header class="topbar">
       <div>
-        <p class="mini-label">SCAN CCCD</p>
-        <h1>Chụp & trích xuất thông tin</h1>
+        <p class="mini-label">SCAN CCCD V3</p>
+        <h1>Chụp thủ công, OCR mạnh hơn</h1>
       </div>
       <button class="icon-btn" id="resetFlowBtn" title="Làm lại">↺</button>
     </header>
@@ -39,14 +39,15 @@
           <div class="guide-frame"></div>
           <div class="camera-status">
             <strong id="captureHint">Mặt trước</strong>
-            <span id="autoCaptureText">Tự động chụp khi thẻ rõ và đứng yên</span>
+            <span id="captureSubtext">Auto capture đã tắt. Người dùng chủ động chụp để chính xác hơn.</span>
           </div>
         </div>
       </div>
 
-      <div class="capture-actions">
-        <button class="main-btn" id="captureBtn">📸 Chụp ngay</button>
-        <button class="soft-btn" id="scanQrBtn">Quét QR</button>
+      <div class="capture-actions three-col">
+        <button class="main-btn" id="captureBtn">📸 Chụp bước hiện tại</button>
+        <button class="soft-btn" id="runOcrBtn">🧠 OCR lại</button>
+        <button class="soft-btn" id="scanQrBtn">🔍 Đọc QR</button>
         <label class="soft-btn upload-btn">
           Tải ảnh
           <input type="file" id="imageUpload" accept="image/*" multiple hidden>
@@ -74,7 +75,10 @@
 
       <div class="section-head">
         <h2>Thông tin nhận dạng</h2>
-        <button class="text-btn" id="copyAllBtn">Copy toàn bộ</button>
+        <div class="head-actions">
+          <button class="text-btn" id="copyAllBtn">Copy toàn bộ</button>
+          <button class="text-btn" id="fillCurrentFromPermanentBtn">Copy thường trú → hiện tại</button>
+        </div>
       </div>
 
       <form id="recordForm" class="compact-form">
@@ -130,7 +134,7 @@
       <div class="section-head stacked-mobile">
         <div>
           <h2>Danh sách hồ sơ</h2>
-          <p class="muted">Tìm kiếm, copy, in hình ảnh thẻ đầy đủ.</p>
+          <p class="muted">IndexedDB + tìm kiếm nhanh + in đầy đủ.</p>
         </div>
         <label class="text-btn upload-inline">
           Nhập JSON
@@ -138,8 +142,7 @@
         </label>
       </div>
 
-      <input type="search" id="searchInput" class="search-input" placeholder="Tìm theo tên, số CCCD, địa chỉ..." />
-
+      <input type="search" id="searchInput" class="search-input" placeholder="Tìm theo tên, số CCCD, CMND cũ, địa chỉ..." />
       <div class="record-list" id="recordsTableBody"></div>
     </section>
   </div>
