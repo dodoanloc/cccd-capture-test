@@ -1,16 +1,33 @@
-# CCCD Capture App
+# CCCD Capture App v2
 
-Bản test mobile-first để chụp CCCD/Căn cước, nhận dạng thông tin từ **ảnh mặt trước + mặt sau**, còn **QR chủ yếu để bổ sung số CMND cũ (nếu có)**.
+Bản v2 tập trung vào khả năng dùng thật tốt hơn trên mobile:
+- **Mobile-first UI**
+- **Lưu dữ liệu bằng IndexedDB** thay vì localStorage
+- **Tiền xử lý ảnh** trước OCR để tăng độ tương phản
+- **OCR mặt trước + mặt sau** là nguồn trích xuất chính
+- **QR chỉ để bổ sung số CMND cũ (nếu có)**
+- Tra cứu, copy, in, xuất/nhập JSON
 
-## Cải tiến đã áp dụng
-- Giao diện ưu tiên mobile, đưa camera lên đầu trang
-- Bỏ phần giới thiệu/hướng dẫn dài để thao tác nhanh hơn
-- Tự động chụp khi khung hình đủ sáng và đủ nét tương đối
-- OCR mặt trước/mặt sau bằng `Tesseract.js`
-- QR dùng để bổ sung dữ liệu phụ, không còn là nguồn chính cho toàn bộ hồ sơ
-- Lưu database cục bộ, tra cứu, copy, in hình ảnh thẻ đầy đủ
+## Cải tiến chính của v2
+1. **IndexedDB**
+   - lưu hồ sơ tốt hơn localStorage
+   - phù hợp khi ảnh và dữ liệu tăng lên
 
-## Ghi chú kỹ thuật
-- OCR trên trình duyệt vẫn phụ thuộc chất lượng ảnh, độ rung, ánh sáng và hiệu năng máy
-- Với điện thoại yếu, lần OCR đầu có thể chậm do tải model
-- Nếu cần độ chính xác cao hơn cho production, nên chuyển OCR sang backend hoặc dùng mô hình/engine chuyên dụng hơn
+2. **Image preprocessing**
+   - chuyển grayscale / tăng tương phản trước OCR
+   - với QR dùng ngưỡng nhị phân để dễ đọc hơn
+
+3. **OCR-first parser**
+   - mặt trước: họ tên, số CCCD, ngày sinh, giới tính, nơi cấp
+   - mặt sau: ngày cấp, thường trú, hiện tại
+   - QR: ưu tiên số CMND cũ
+
+4. **Auto capture cải tiến**
+   - kiểm tra sáng + sắc nét tương đối
+   - tự chụp khi khung hình ổn định hơn
+
+## Lưu ý
+Đây vẫn là frontend-only prototype nâng cao. Nếu cần production-grade OCR rất ổn định, bước tiếp theo nên là:
+- crop/deskew thẻ bằng computer vision
+- OCR backend chuyên dụng
+- đồng bộ database server-side

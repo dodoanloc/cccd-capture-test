@@ -12,14 +12,13 @@ const state = {
   autoCaptureCooldown: false,
   frameCheckTimer: null,
   ocrWorker: null,
+  db: null,
 };
 
-const STORAGE_KEY = 'cccd_capture_records_v2';
-const stepLabels = {
-  front: 'Mặt trước',
-  back: 'Mặt sau',
-  qr: 'QR',
-};
+const DB_NAME = 'cccd_capture_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'records';
+const stepLabels = { front: 'Mặt trước', back: 'Mặt sau', qr: 'QR' };
 
 const els = {
   video: document.getElementById('video'),
@@ -57,8 +56,52 @@ function updateStepUI() {
   });
   els.captureHint.textContent = stepLabels[state.captureStep];
   els.autoCaptureText.textContent = state.captureStep === 'qr'
-    ? 'Ưu tiên đọc QR để tìm số CMND cũ (nếu có)'
-    : 'Tự động chụp khi thẻ rõ và đứng yên';
+    ? 'QR dùng để bổ sung số CMND cũ nếu có'
+    : 'Tự động chụp khi thẻ rõ, sáng và đứng yên';
+}
+
+function openDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        store.createIndex('fullName', 'fullName', { unique: false });
+        store.createIndex('idNumber', 'idNumber', { unique: false });
+        store.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getStore(mode = 'readonly') {
+  return state.db.transaction(STORE_NAME, mode).objectStore(STORE_NAME);
+}
+
+function idbRequestToPromise(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function loadRecordsFromDb() {
+  const store = getStore('readonly');
+  const records = await idbRequestToPromise(store.getAll());
+  state.records = (records || []).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+async function saveRecordToDb(record) {
+  const store = getStore('readwrite');
+  await idbRequestToPromise(store.put(record));
+}
+
+async function deleteRecordFromDb(id) {
+  const store = getStore('readwrite');
+  await idbRequestToPromise(store.delete(id));
 }
 
 async function startCamera() {
@@ -72,15 +115,14 @@ async function startCamera() {
       },
       audio: false,
     };
-
     state.stream = await navigator.mediaDevices.getUserMedia(constraints);
     els.video.srcObject = state.stream;
     await els.video.play();
-    setBanner('Camera đã sẵn sàng. Đưa thẻ vào khung, hệ thống sẽ tự chụp khi ảnh đủ rõ.', 'success');
+    setBanner('Camera đã sẵn sàng. Đưa thẻ vào khung, app sẽ cố tự chụp khi đủ rõ.', 'success');
     startAutoCaptureLoop();
   } catch (error) {
     console.error(error);
-    setBanner('Không bật được camera. Có thể tải ảnh lên để tiếp tục.', 'error');
+    setBanner('Không bật được camera. Có thể dùng tính năng tải ảnh lên.', 'error');
   }
 }
 
@@ -101,38 +143,39 @@ function startAutoCaptureLoop() {
     if (!state.autoCaptureEnabled || state.autoCaptureCooldown) return;
     if (!els.video.videoWidth || !els.video.videoHeight) return;
     checkFrameReadiness();
-  }, 900);
+  }, 850);
 }
 
 function checkFrameReadiness() {
   const canvas = els.captureCanvas;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  canvas.width = 480;
-  canvas.height = 300;
+  canvas.width = 540;
+  canvas.height = 340;
   ctx.drawImage(els.video, 0, 0, canvas.width, canvas.height);
   const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-  let total = 0;
-  let sharpness = 0;
-  for (let i = 0; i < data.length; i += 4 * 12) {
-    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    total += gray;
+  let brightnessAccumulator = 0;
+  let gradientScore = 0;
+
+  for (let i = 0; i < data.length; i += 4 * 10) {
+    brightnessAccumulator += data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
   }
-  for (let y = 1; y < height - 1; y += 4) {
-    for (let x = 1; x < width - 1; x += 4) {
+
+  for (let y = 2; y < height - 2; y += 3) {
+    for (let x = 2; x < width - 2; x += 3) {
       const idx = (y * width + x) * 4;
-      const center = data[idx];
-      const right = data[idx + 4];
-      const bottom = data[idx + width * 4];
-      sharpness += Math.abs(center - right) + Math.abs(center - bottom);
+      const c = data[idx];
+      const r = data[idx + 4];
+      const b = data[idx + width * 4];
+      gradientScore += Math.abs(c - r) + Math.abs(c - b);
     }
   }
 
-  const brightness = total / (data.length / (4 * 12));
-  const frameSharpEnough = sharpness > 180000;
-  const frameBrightEnough = brightness > 70 && brightness < 220;
+  const brightness = brightnessAccumulator / (data.length / (4 * 10));
+  const sharpEnough = gradientScore > 320000;
+  const lightOkay = brightness > 75 && brightness < 225;
 
-  if (frameSharpEnough && frameBrightEnough) {
+  if (sharpEnough && lightOkay) {
     state.autoCaptureCooldown = true;
     captureFrame(true);
     setTimeout(() => { state.autoCaptureCooldown = false; }, 1800);
@@ -145,9 +188,42 @@ function nextStep() {
   updateStepUI();
 }
 
-function captureFrame(auto = false) {
+async function preprocessImage(dataUrl, mode = 'text') {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const maxWidth = 1800;
+      const scale = Math.min(1, maxWidth / img.width);
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        const contrastBoost = avg > 140 ? 255 : avg < 90 ? 0 : avg;
+        data[i] = contrastBoost;
+        data[i + 1] = contrastBoost;
+        data[i + 2] = contrastBoost;
+        if (mode === 'qr') {
+          data[i] = avg > 150 ? 255 : 0;
+          data[i + 1] = avg > 150 ? 255 : 0;
+          data[i + 2] = avg > 150 ? 255 : 0;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL('image/jpeg', 0.96));
+    };
+    img.src = dataUrl;
+  });
+}
+
+async function captureFrame(auto = false) {
   if (!els.video.videoWidth || !els.video.videoHeight) {
-    setBanner('Camera chưa có hình. Hãy bật camera hoặc đợi thiết bị tải xong.', 'error');
+    setBanner('Camera chưa có hình.', 'error');
     return;
   }
 
@@ -156,30 +232,33 @@ function captureFrame(auto = false) {
   canvas.width = els.video.videoWidth;
   canvas.height = els.video.videoHeight;
   ctx.drawImage(els.video, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+  const rawDataUrl = canvas.toDataURL('image/jpeg', 0.95);
 
   if (state.captureStep === 'front') {
-    state.frontImage = dataUrl;
-    els.frontPreview.src = dataUrl;
-    setBanner(auto ? 'Đã tự động chụp mặt trước. Đang nhận dạng chữ...' : 'Đã chụp mặt trước. Đang nhận dạng chữ...', 'success');
-    runOcr('front', dataUrl);
+    state.frontImage = rawDataUrl;
+    els.frontPreview.src = rawDataUrl;
+    setBanner(auto ? 'Đã tự chụp mặt trước. Đang OCR...' : 'Đã chụp mặt trước. Đang OCR...', 'success');
+    const processed = await preprocessImage(rawDataUrl, 'text');
+    runOcr('front', processed);
     nextStep();
     return;
   }
 
   if (state.captureStep === 'back') {
-    state.backImage = dataUrl;
-    els.backPreview.src = dataUrl;
-    setBanner(auto ? 'Đã tự động chụp mặt sau. Đang nhận dạng nội dung...' : 'Đã chụp mặt sau. Đang nhận dạng nội dung...', 'success');
-    runOcr('back', dataUrl);
+    state.backImage = rawDataUrl;
+    els.backPreview.src = rawDataUrl;
+    setBanner(auto ? 'Đã tự chụp mặt sau. Đang OCR...' : 'Đã chụp mặt sau. Đang OCR...', 'success');
+    const processed = await preprocessImage(rawDataUrl, 'text');
+    runOcr('back', processed);
     nextStep();
     return;
   }
 
-  state.qrImage = dataUrl;
-  els.qrPreview.src = dataUrl;
-  setBanner('Đã chụp vùng QR. Đang đọc QR để tìm số CMND cũ (nếu có)...', 'info');
-  readQrFromCanvas(canvas);
+  state.qrImage = rawDataUrl;
+  els.qrPreview.src = rawDataUrl;
+  setBanner('Đã chụp QR. Đang đọc QR để lấy số CMND cũ nếu có...', 'info');
+  const processedQr = await preprocessImage(rawDataUrl, 'qr');
+  readQrFromDataUrl(processedQr);
 }
 
 async function getWorker() {
@@ -195,16 +274,17 @@ async function runOcr(side, imageDataUrl) {
     const { data } = await worker.recognize(imageDataUrl);
     const text = normalizeOcrText(data.text || '');
     if (side === 'front') parseFrontText(text);
-    if (side === 'back') parseBackText(text);
+    else parseBackText(text);
   } catch (error) {
     console.error(error);
-    setBanner('OCR chưa đọc tốt ảnh vừa chụp. Có thể chỉnh tay các trường bên dưới.', 'error');
+    setBanner('OCR chưa đọc tốt. Anh/chị có thể chụp lại hoặc chỉnh tay.', 'error');
   }
 }
 
 function normalizeOcrText(text) {
   return text
     .replace(/[|]/g, 'I')
+    .replace(/CCCD/g, 'CĂN CƯỚC')
     .replace(/\s{2,}/g, ' ')
     .replace(/\n{2,}/g, '\n')
     .trim();
@@ -212,51 +292,31 @@ function normalizeOcrText(text) {
 
 function parseFrontText(text) {
   const lines = text.split('\n').map(x => x.trim()).filter(Boolean);
+  const upperLines = lines.filter(line => /^[A-ZÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬĐÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴ\s]{6,}$/.test(line));
+  const probableName = upperLines.find(line => !/VIỆT NAM|CĂN CƯỚC|IDENTITY|CARD/i.test(line));
   const idMatch = text.match(/\b\d{12}\b/);
   const birthMatch = text.match(/\b\d{2}[\/\-]\d{2}[\/\-]\d{4}\b/);
   const genderMatch = text.match(/\bNam\b|\bNữ\b/i);
-
-  const upperLines = lines.filter(line => /^[A-ZÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬĐÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴ\s]{6,}$/.test(line));
-  const probableName = upperLines.find(line => !line.includes('VIỆT NAM') && !line.includes('CĂN CƯỚC'));
-
-  const issuePlaceHint = text.includes('Cục Cảnh sát quản lý hành chính về trật tự xã hội')
-    ? 'Cục Cảnh sát quản lý hành chính về trật tự xã hội'
-    : '';
+  const issuePlaceMatch = text.match(/Cục[^\n]+TTXH|Cục Cảnh sát[^\n]+/i);
 
   assignParsedFields({
+    fullName: probableName ? toTitleCase(probableName) : '',
     idNumber: idMatch?.[0] || '',
     birthDate: birthMatch ? normalizeDateString(birthMatch[0]) : '',
     gender: genderMatch ? normalizeGender(genderMatch[0]) : '',
-    fullName: probableName ? toTitleCase(probableName) : '',
-    issuePlace: issuePlaceHint,
+    issuePlace: issuePlaceMatch ? cleanupIssuePlace(issuePlaceMatch[0]) : '',
   }, false);
 
-  setBanner('Đã nhận dạng mặt trước. Kiểm tra lại dữ liệu và tiếp tục quét QR.', 'success');
+  setBanner('Đã nhận dạng mặt trước. Tiếp tục chụp mặt sau.', 'success');
 }
 
 function parseBackText(text) {
   const lines = text.split('\n').map(x => x.trim()).filter(Boolean);
-  const joined = lines.join(' ');
-  const issueDateMatch = joined.match(/\b\d{2}[\/\-]\d{2}[\/\-]\d{4}\b/);
+  const merged = lines.join(' ');
+  const issueDateMatch = merged.match(/\b\d{2}[\/\-]\d{2}[\/\-]\d{4}\b/);
 
-  let permanentAddress = '';
-  let currentAddress = '';
-
-  const thuongTruIdx = lines.findIndex(line => /thường trú/i.test(line));
-  if (thuongTruIdx >= 0) {
-    permanentAddress = lines.slice(thuongTruIdx + 1, thuongTruIdx + 4).join(' ').trim();
-  }
-
-  const currentIdx = lines.findIndex(line => /nơi ở hiện tại|hiện tại/i.test(line));
-  if (currentIdx >= 0) {
-    currentAddress = lines.slice(currentIdx + 1, currentIdx + 4).join(' ').trim();
-  }
-
-  if (!permanentAddress) {
-    const addressLike = lines.filter(line => /xã|phường|thị trấn|huyện|quận|tỉnh|thành phố/i.test(line));
-    if (addressLike.length) permanentAddress = addressLike.slice(0, 2).join(', ');
-  }
-  if (!currentAddress) currentAddress = permanentAddress;
+  const permanentAddress = extractAddress(lines, [/thường trú/i, /noi thuong tru/i]);
+  const currentAddress = extractAddress(lines, [/nơi ở hiện tại/i, /hiện tại/i, /noi o hien tai/i]) || permanentAddress;
 
   assignParsedFields({
     issueDate: issueDateMatch ? normalizeDateString(issueDateMatch[0]) : '',
@@ -264,51 +324,68 @@ function parseBackText(text) {
     currentAddress,
   }, false);
 
-  setBanner('Đã nhận dạng mặt sau. QR giờ chỉ dùng để lấy số CMND cũ nếu có.', 'success');
+  setBanner('Đã nhận dạng mặt sau. Bước QR chỉ để bổ sung số CMND cũ nếu có.', 'success');
 }
 
-function readQrFromCanvas(canvas) {
-  const ctx = canvas.getContext('2d');
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const result = window.jsQR(imageData.data, canvas.width, canvas.height);
-
-  if (!result) {
-    setBanner('Chưa đọc được QR. Thử chụp lại gần hơn. Các trường chính vẫn lấy từ ảnh mặt trước/mặt sau.', 'error');
-    return;
+function extractAddress(lines, patterns) {
+  const idx = lines.findIndex(line => patterns.some(regex => regex.test(line)));
+  if (idx >= 0) {
+    const slice = lines.slice(idx + 1, idx + 4).join(' ').trim();
+    if (slice) return cleanupAddress(slice);
   }
+  const addressLike = lines.filter(line => /xã|phường|thị trấn|huyện|quận|tỉnh|thành phố/i.test(line));
+  return addressLike.length ? cleanupAddress(addressLike.slice(0, 2).join(', ')) : '';
+}
 
-  state.qrText = result.data;
-  parseVietnamIdQr(result.data);
-  setBanner('Đã đọc QR. Nếu QR có chứa CMND cũ thì hệ thống đã tự điền.', 'success');
+function cleanupAddress(value) {
+  return value.replace(/^[,:;\-\s]+/, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+function cleanupIssuePlace(value) {
+  return value.replace(/\s{2,}/g, ' ').trim();
+}
+
+function readQrFromDataUrl(dataUrl) {
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const result = window.jsQR(imageData.data, canvas.width, canvas.height);
+
+    if (!result) {
+      setBanner('Chưa đọc được QR. Không sao, dữ liệu chính vẫn lấy từ ảnh trước/sau.', 'error');
+      return;
+    }
+
+    state.qrText = result.data;
+    parseVietnamIdQr(result.data);
+    setBanner('Đã đọc QR. Đã bổ sung số CMND cũ nếu QR có chứa thông tin đó.', 'success');
+  };
+  img.src = dataUrl;
 }
 
 function parseVietnamIdQr(raw) {
   const cleaned = raw.trim();
   const pipeParts = cleaned.split('|');
-
   if (pipeParts.length >= 2) {
     const idNumberFromQr = pipeParts[0] || '';
     const oldId = pipeParts[1] || '';
-    assignParsedFields({
-      idNumber: idNumberFromQr,
-      oldIdNumber: oldId,
-    }, true);
+    assignParsedFields({ idNumber: idNumberFromQr, oldIdNumber: oldId }, true);
     return;
   }
-
   const cmndMatch = cleaned.match(/\b\d{9}\b/);
-  if (cmndMatch) {
-    assignParsedFields({ oldIdNumber: cmndMatch[0] }, true);
-  }
+  if (cmndMatch) assignParsedFields({ oldIdNumber: cmndMatch[0] }, true);
 }
 
 function assignParsedFields(data, preferOverwrite = false) {
   Object.entries(data).forEach(([key, value]) => {
     if (!formIds[key] || !value) return;
     const el = document.getElementById(formIds[key]);
-    if (preferOverwrite || !el.value.trim()) {
-      el.value = value.trim();
-    }
+    if (preferOverwrite || !el.value.trim()) el.value = value.trim();
   });
 }
 
@@ -341,7 +418,7 @@ function validateRecord(data) {
   return '';
 }
 
-function saveRecord() {
+async function saveRecord() {
   const formData = getFormData();
   const error = validateRecord(formData);
   if (error) {
@@ -349,6 +426,7 @@ function saveRecord() {
     return;
   }
 
+  const existing = state.loadedRecordId ? state.records.find(r => r.id === state.loadedRecordId) : null;
   const record = {
     id: state.loadedRecordId || crypto.randomUUID(),
     ...formData,
@@ -356,35 +434,23 @@ function saveRecord() {
     frontImage: state.frontImage,
     backImage: state.backImage,
     qrImage: state.qrImage,
+    createdAt: existing?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    createdAt: state.loadedRecordId
-      ? (state.records.find(r => r.id === state.loadedRecordId)?.createdAt || new Date().toISOString())
-      : new Date().toISOString(),
   };
 
-  const idx = state.records.findIndex(r => r.id === record.id);
-  if (idx >= 0) state.records[idx] = record;
-  else state.records.unshift(record);
-
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records));
+  await saveRecordToDb(record);
+  await loadRecordsFromDb();
   renderRecords();
-  setBanner('Đã lưu hồ sơ vào database cục bộ.', 'success');
+  setBanner('Đã lưu hồ sơ vào IndexedDB trên thiết bị.', 'success');
   resetFlow(false);
-}
-
-function loadRecords() {
-  try {
-    state.records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  } catch {
-    state.records = [];
-  }
 }
 
 function renderRecords() {
   const query = els.searchInput.value.trim().toLowerCase();
   const filtered = state.records.filter(record => {
     if (!query) return true;
-    return [record.fullName, record.idNumber, record.permanentAddress, record.currentAddress].join(' ').toLowerCase().includes(query);
+    return [record.fullName, record.idNumber, record.permanentAddress, record.currentAddress, record.oldIdNumber]
+      .join(' ').toLowerCase().includes(query);
   });
 
   if (!filtered.length) {
@@ -394,7 +460,6 @@ function renderRecords() {
 
   const template = document.getElementById('recordCardTemplate');
   els.recordsTableBody.innerHTML = '';
-
   filtered.forEach(record => {
     const node = template.content.cloneNode(true);
     node.querySelector('.record-name').textContent = record.fullName || 'Chưa có tên';
@@ -457,17 +522,17 @@ async function copyAllCurrent() {
     `Nơi cấp: ${data.issuePlace}`,
   ].join('\n');
   await navigator.clipboard.writeText(text);
-  setBanner('Đã copy toàn bộ thông tin đang hiển thị.', 'success');
+  setBanner('Đã copy toàn bộ thông tin hiện tại.', 'success');
 }
 
-function deleteRecord(id) {
+async function deleteRecord(id) {
   const record = state.records.find(r => r.id === id);
   if (!record) return;
   if (!confirm(`Xóa hồ sơ ${record.fullName}?`)) return;
-  state.records = state.records.filter(r => r.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records));
+  await deleteRecordFromDb(id);
+  await loadRecordsFromDb();
   renderRecords();
-  setBanner('Đã xóa hồ sơ.', 'success');
+  setBanner('Đã xóa hồ sơ khỏi IndexedDB.', 'success');
 }
 
 function printRecord(id) {
@@ -517,61 +582,55 @@ function exportJson() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `cccd-records-${Date.now()}.json`;
+  a.download = `cccd-records-v2-${Date.now()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function importJson(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const parsed = JSON.parse(reader.result);
-      if (!Array.isArray(parsed)) throw new Error('JSON không hợp lệ');
-      state.records = parsed;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records));
-      renderRecords();
-      setBanner('Đã nhập database từ JSON.', 'success');
-    } catch (error) {
-      setBanner(error.message, 'error');
-    }
-  };
-  reader.readAsText(file, 'utf-8');
+async function importJson(file) {
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  if (!Array.isArray(parsed)) throw new Error('JSON không hợp lệ');
+  for (const record of parsed) {
+    await saveRecordToDb(record);
+  }
+  await loadRecordsFromDb();
+  renderRecords();
+  setBanner('Đã nhập dữ liệu từ JSON vào IndexedDB.', 'success');
 }
 
-function handleUploadedFiles(files) {
+async function handleUploadedFiles(files) {
   const file = files?.[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const image = new Image();
-    image.onload = () => {
-      const canvas = els.captureCanvas;
-      const ctx = canvas.getContext('2d');
-      canvas.width = image.width;
-      canvas.height = image.height;
-      ctx.drawImage(image, 0, 0);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+  const dataUrl = await fileToDataUrl(file);
 
-      if (state.captureStep === 'front') {
-        state.frontImage = dataUrl;
-        els.frontPreview.src = dataUrl;
-        runOcr('front', dataUrl);
-        nextStep();
-      } else if (state.captureStep === 'back') {
-        state.backImage = dataUrl;
-        els.backPreview.src = dataUrl;
-        runOcr('back', dataUrl);
-        nextStep();
-      } else {
-        state.qrImage = dataUrl;
-        els.qrPreview.src = dataUrl;
-        readQrFromCanvas(canvas);
-      }
-    };
-    image.src = reader.result;
-  };
-  reader.readAsDataURL(file);
+  if (state.captureStep === 'front') {
+    state.frontImage = dataUrl;
+    els.frontPreview.src = dataUrl;
+    const processed = await preprocessImage(dataUrl, 'text');
+    runOcr('front', processed);
+    nextStep();
+  } else if (state.captureStep === 'back') {
+    state.backImage = dataUrl;
+    els.backPreview.src = dataUrl;
+    const processed = await preprocessImage(dataUrl, 'text');
+    runOcr('back', processed);
+    nextStep();
+  } else {
+    state.qrImage = dataUrl;
+    els.qrPreview.src = dataUrl;
+    const processed = await preprocessImage(dataUrl, 'qr');
+    readQrFromDataUrl(processed);
+  }
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function escapeHtml(value) {
@@ -592,7 +651,7 @@ document.getElementById('captureBtn').addEventListener('click', () => captureFra
 document.getElementById('scanQrBtn').addEventListener('click', () => {
   state.captureStep = 'qr';
   updateStepUI();
-  setBanner('Đã chuyển sang bước QR. QR chỉ dùng để lấy số CMND cũ (nếu có).', 'info');
+  setBanner('Đã chuyển sang bước QR. QR chỉ để bổ sung số CMND cũ nếu có.', 'info');
 });
 document.querySelectorAll('.step-pill').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -606,11 +665,23 @@ document.getElementById('copyAllBtn').addEventListener('click', copyAllCurrent);
 document.getElementById('searchInput').addEventListener('input', renderRecords);
 document.getElementById('exportJsonBtn').addEventListener('click', exportJson);
 document.getElementById('imageUpload').addEventListener('change', e => handleUploadedFiles(e.target.files));
-document.getElementById('importJsonInput').addEventListener('change', e => {
-  if (e.target.files?.[0]) importJson(e.target.files[0]);
+document.getElementById('importJsonInput').addEventListener('change', async e => {
+  try {
+    if (e.target.files?.[0]) await importJson(e.target.files[0]);
+  } catch (error) {
+    setBanner(error.message, 'error');
+  }
 });
 
-loadRecords();
-renderRecords();
-updateStepUI();
-setBanner('Sẵn sàng chụp hồ sơ mới.', 'info');
+(async function init() {
+  try {
+    state.db = await openDatabase();
+    await loadRecordsFromDb();
+    renderRecords();
+    updateStepUI();
+    setBanner('Bản v2 đã sẵn sàng: lưu IndexedDB, OCR mặt trước/sau, QR bổ sung CMND cũ.', 'info');
+  } catch (error) {
+    console.error(error);
+    setBanner('Không mở được IndexedDB. Trình duyệt có thể đang chặn lưu trữ.', 'error');
+  }
+})();
