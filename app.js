@@ -38,6 +38,7 @@ const formIds = {
   birthDate: 'birthDate',
   gender: 'gender',
   issueDate: 'issueDate',
+  expiryDate: 'expiryDate',
   issuePlace: 'issuePlace',
   permanentAddress: 'permanentAddress',
   currentAddress: 'currentAddress',
@@ -302,24 +303,31 @@ function parseFrontTexts(texts) {
   const upperLines = allLines.filter(line => /^[A-ZÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬĐÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴ\s]{6,}$/.test(line));
   const probableName = upperLines.find(line => !/VIỆT NAM|CĂN CƯỚC|IDENTITY|CARD/i.test(line));
 
+  const fallbackIssuePlace = merged.match(/Bộ Công an|Cục Cảnh sát[^\n]+|Cục[^\n]+TTXH/i)?.[0] || '';
+
   return {
     fullName: probableName ? toTitleCase(probableName) : '',
-    idNumber: mostFrequent(idCandidates),
+    idNumber: chooseBestIdNumber(idCandidates, lines),
     birthDate: mostFrequent(birthCandidates),
     gender: genderCandidate,
-    issuePlace: cleanupIssuePlace(issuePlace),
+    issuePlace: cleanupIssuePlace(issuePlace || fallbackIssuePlace),
   };
 }
 
 function parseBackTexts(texts) {
   const merged = texts.join('\n');
   const lines = merged.split('\n').map(x => x.trim()).filter(Boolean);
-  const issueDates = [...merged.matchAll(/\b\d{2}[\/\-]\d{2}[\/\-]\d{4}\b/g)].map(m => normalizeDateString(m[0]));
+  const allDates = [...merged.matchAll(/\b\d{2}[\/\-]\d{2}[\/\-]\d{4}\b/g)].map(m => normalizeDateString(m[0]));
+  const issueDate = allDates[0] || '';
+  const expiryDate = allDates[1] || (/không thời hạn/i.test(merged) ? 'Không thời hạn' : '');
   const permanentAddress = extractAddress(lines, [/thường trú/i, /noi thuong tru/i]);
   const currentAddress = extractAddress(lines, [/nơi ở hiện tại/i, /hiện tại/i, /noi o hien tai/i]) || permanentAddress;
+  const issuePlace = extractIssuePlaceFromBack(lines, merged);
 
   return {
-    issueDate: mostFrequent(issueDates),
+    issueDate,
+    expiryDate,
+    issuePlace,
     permanentAddress,
     currentAddress,
   };
@@ -330,6 +338,23 @@ function mostFrequent(arr) {
   const map = new Map();
   arr.forEach(v => map.set(v, (map.get(v) || 0) + 1));
   return [...map.entries()].sort((a, b) => b[1] - a[1])[0][0] || '';
+}
+
+function chooseBestIdNumber(candidates, lines) {
+  const clean = candidates.filter(Boolean);
+  if (clean.length) return mostFrequent(clean);
+  for (const line of lines) {
+    const digits = line.replace(/\D/g, ' ');
+    const match = digits.match(/\b\d{12}\b/);
+    if (match) return match[0];
+  }
+  return '';
+}
+
+function extractIssuePlaceFromBack(lines, merged) {
+  const joined = lines.join(' ');
+  const match = joined.match(/Bộ Công an|Cục Cảnh sát[^\n]+|Cục[^\n]+TTXH/i) || merged.match(/Bộ Công an|Cục Cảnh sát[^\n]+|Cục[^\n]+TTXH/i);
+  return cleanupIssuePlace(match?.[0] || '');
 }
 
 function extractAddress(lines, patterns) {
@@ -516,6 +541,7 @@ async function copyRecord(id) {
     `Địa chỉ thường trú: ${record.permanentAddress || ''}`,
     `Địa chỉ hiện tại: ${record.currentAddress || ''}`,
     `Ngày cấp: ${record.issueDate || ''}`,
+    `Ngày hết hạn: ${record.expiryDate || ''}`,
     `Nơi cấp: ${record.issuePlace || ''}`,
   ].join('\n');
   await navigator.clipboard.writeText(text);
@@ -533,6 +559,7 @@ async function copyAllCurrent() {
     `Địa chỉ thường trú: ${data.permanentAddress}`,
     `Địa chỉ hiện tại: ${data.currentAddress}`,
     `Ngày cấp: ${data.issueDate}`,
+    `Ngày hết hạn: ${data.expiryDate}`,
     `Nơi cấp: ${data.issuePlace}`,
   ].join('\n');
   await navigator.clipboard.writeText(text);
@@ -574,6 +601,7 @@ function printRecord(id) {
     <div><strong>Địa chỉ thường trú:</strong> ${escapeHtml(record.permanentAddress || '')}</div>
     <div><strong>Địa chỉ hiện tại:</strong> ${escapeHtml(record.currentAddress || '')}</div>
     <div><strong>Ngày cấp:</strong> ${escapeHtml(record.issueDate || '')}</div>
+    <div><strong>Ngày hết hạn:</strong> ${escapeHtml(record.expiryDate || '')}</div>
     <div><strong>Nơi cấp:</strong> ${escapeHtml(record.issuePlace || '')}</div>
   `;
   template.querySelector('.print-images').innerHTML = [record.frontImage, record.backImage, record.qrImage]

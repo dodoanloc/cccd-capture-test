@@ -13,7 +13,7 @@ V3 tập trung sửa 2 điểm lớn:
   - grayscale / nhị phân hóa
 - Parser mạnh hơn theo hướng voting từ nhiều kết quả OCR
 - Mặt trước ưu tiên: họ tên, CCCD, ngày sinh, giới tính, nơi cấp
-- Mặt sau ưu tiên: ngày cấp, địa chỉ thường trú, địa chỉ hiện tại
+- Mặt sau ưu tiên: ngày cấp, ngày hết hạn, nơi cấp, địa chỉ thường trú, địa chỉ hiện tại
 - QR chỉ bổ sung số CMND cũ nếu có
 - Có nút copy địa chỉ thường trú sang địa chỉ hiện tại
 - Lưu bằng IndexedDB, hỗ trợ export/import JSON
