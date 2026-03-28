@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyClaw CCCD Capture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🪪</div>
+        <div>
+          <h1>CCCD Capture</h1>
+          <p>Quét thẻ nhanh, tra cứu gọn</p>
+        </div>
+      </div>
+
+      <div class="stepper">
+        <div class="step active" data-step="front">
+          <span>1</span>
+          <div>
+            <strong>Mặt trước</strong>
+            <small>Chụp ảnh CCCD mặt trước</small>
+          </div>
+        </div>
+        <div class="step" data-step="back">
+          <span>2</span>
+          <div>
+            <strong>Mặt sau</strong>
+            <small>Chụp mặt sau để lưu hồ sơ</small>
+          </div>
+        </div>
+        <div class="step" data-step="qr">
+          <span>3</span>
+          <div>
+            <strong>Mã QR</strong>
+            <small>Quét để trích xuất dữ liệu</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-card">
+        <h3>Mục tiêu</h3>
+        <ul>
+          <li>Chụp tuần tự mặt trước, mặt sau, QR</li>
+          <li>Tự điền dữ liệu vào hồ sơ</li>
+          <li>Lưu database ngay trên trình duyệt</li>
+          <li>Tra cứu, copy, in hồ sơ đầy đủ</li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">WEBAPP NGHIỆP VỤ</p>
+          <h2>Quét CCCD/Thẻ Căn cước bằng camera thiết bị</h2>
+          <p class="hero-text">Thiết kế để thao tác nhanh trên điện thoại hoặc laptop, lưu hồ sơ cục bộ an toàn, xem lại, copy dữ liệu và in ảnh thẻ kèm QR.</p>
+        </div>
+        <div class="hero-actions">
+          <button class="btn secondary" id="resetFlowBtn">Làm lại quy trình</button>
+          <button class="btn primary" id="saveRecordBtn">Lưu hồ sơ</button>
+        </div>
+      </header>
+
+      <section class="grid-two">
+        <div class="panel capture-panel">
+          <div class="panel-head">
+            <div>
+              <h3>Camera chụp tuần tự</h3>
+              <p>Hệ thống dùng camera sau nếu thiết bị hỗ trợ.</p>
+            </div>
+            <div class="inline-actions">
+              <button class="chip-btn" id="startCameraBtn">Bật camera</button>
+              <button class="chip-btn" id="switchCameraBtn">Đổi camera</button>
+            </div>
+          </div>
+
+          <div class="camera-stage">
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="captureCanvas" hidden></canvas>
+            <div class="camera-overlay">
+              <div class="guide-frame"></div>
+              <p id="captureHint">Bước 1: Chụp mặt trước CCCD</p>
+            </div>
+          </div>
+
+          <div class="capture-actions">
+            <button class="btn secondary" id="captureBtn">📸 Chụp ảnh</button>
+            <button class="btn ghost" id="scanQrBtn">🔍 Quét QR từ camera</button>
+            <label class="btn ghost upload-btn">
+              ⬆️ Tải ảnh lên
+              <input type="file" id="imageUpload" accept="image/*" multiple hidden>
+            </label>
+          </div>
+
+          <div class="preview-grid">
+            <div class="preview-card">
+              <div class="preview-label">Mặt trước</div>
+              <img id="frontPreview" alt="Mặt trước CCCD" />
+            </div>
+            <div class="preview-card">
+              <div class="preview-label">Mặt sau</div>
+              <img id="backPreview" alt="Mặt sau CCCD" />
+            </div>
+            <div class="preview-card qr-card">
+              <div class="preview-label">QR / Dữ liệu QR</div>
+              <img id="qrPreview" alt="Ảnh vùng QR" />
+              <pre id="qrText">Chưa có dữ liệu QR.</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel form-panel">
+          <div class="panel-head">
+            <div>
+              <h3>Thông tin trích xuất</h3>
+              <p>Có thể chỉnh tay trước khi lưu database.</p>
+            </div>
+            <button class="chip-btn" id="copyAllBtn">Copy toàn bộ</button>
+          </div>
+
+          <div id="statusBanner" class="status-banner info">Sẵn sàng chụp hồ sơ mới.</div>
+
+          <form id="recordForm" class="form-grid">
+            <div class="field full">
+              <label>Họ và tên</label>
+              <input type="text" id="fullName" placeholder="Nhập họ và tên" />
+            </div>
+
+            <div class="field">
+              <label>Số CCCD</label>
+              <input type="text" id="idNumber" placeholder="Nhập số CCCD" />
+            </div>
+
+            <div class="field">
+              <label>Số CMND cũ</label>
+              <input type="text" id="oldIdNumber" placeholder="Nếu có" />
+            </div>
+
+            <div class="field">
+              <label>Ngày sinh</label>
+              <input type="text" id="birthDate" placeholder="dd/mm/yyyy" />
+            </div>
+
+            <div class="field">
+              <label>Giới tính</label>
+              <select id="gender">
+                <option value="">Chọn giới tính</option>
+                <option value="Nam">Nam</option>
+                <option value="Nữ">Nữ</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Ngày cấp</label>
+              <input type="text" id="issueDate" placeholder="dd/mm/yyyy" />
+            </div>
+
+            <div class="field">
+              <label>Nơi cấp</label>
+              <input type="text" id="issuePlace" placeholder="Nơi cấp" />
+            </div>
+
+            <div class="field full">
+              <label>Địa chỉ thường trú</label>
+              <textarea id="permanentAddress" rows="3" placeholder="Nhập địa chỉ thường trú"></textarea>
+            </div>
+
+            <div class="field full">
+              <label>Địa chỉ hiện tại</label>
+              <textarea id="currentAddress" rows="3" placeholder="Nhập địa chỉ hiện tại"></textarea>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel database-panel">
+        <div class="panel-head">
+          <div>
+            <h3>Database hồ sơ CCCD</h3>
+            <p>Tra cứu nhanh, copy nội dung, in hồ sơ đầy đủ.</p>
+          </div>
+          <div class="toolbar">
+            <input type="search" id="searchInput" placeholder="Tìm theo tên, CCCD, địa chỉ..." />
+            <button class="chip-btn" id="exportJsonBtn">Xuất JSON</button>
+            <label class="chip-btn upload-inline">
+              Nhập JSON
+              <input type="file" id="importJsonInput" accept="application/json" hidden>
+            </label>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Họ tên</th>
+                <th>Số CCCD</th>
+                <th>Ngày sinh</th>
+                <th>Giới tính</th>
+                <th>Địa chỉ</th>
+                <th>Ngày cấp</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="recordsTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="printTemplate">
+    <div class="print-sheet">
+      <h1>Hồ sơ thẻ Căn cước / CCCD</h1>
+      <div class="print-summary"></div>
+      <div class="print-images"></div>
+      <div class="print-qr"></div>
+    </div>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
